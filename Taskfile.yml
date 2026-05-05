@@ -1,0 +1,48 @@
+version: '3'
+
+vars:
+  APP_BUNDLE: build/HrefTo.app
+  BINARY: '{{.APP_BUNDLE}}/Contents/MacOS/HrefTo'
+  SDK:
+    sh: xcrun --show-sdk-path
+  SWIFT_FILES:
+    sh: find HrefTo -name '*.swift' | sort | tr '\n' ' '
+
+tasks:
+  build:
+    desc: Build the HrefTo app bundle
+    sources:
+      - HrefTo/**/*.swift
+      - HrefTo/Info.plist
+    generates:
+      - '{{.BINARY}}'
+    cmds:
+      - mkdir -p {{.APP_BUNDLE}}/Contents/MacOS {{.APP_BUNDLE}}/Contents/Resources
+      - |
+        swiftc \
+          -target arm64-apple-macos14.0 \
+          -sdk {{.SDK}} \
+          -o {{.BINARY}} \
+          -framework AppKit \
+          -framework SwiftUI \
+          -framework ServiceManagement \
+          {{.SWIFT_FILES}}
+      - cp build-support/Info.plist {{.APP_BUNDLE}}/Contents/
+      - printf 'APPL????' > {{.APP_BUNDLE}}/Contents/PkgInfo
+      - codesign -s - --force {{.APP_BUNDLE}}
+
+  check:
+    desc: Type-check all Swift sources (fast, no linking)
+    cmds:
+      - swiftc -typecheck -target arm64-apple-macos14.0 -sdk {{.SDK}} {{.SWIFT_FILES}}
+
+  clean:
+    desc: Remove build artifacts
+    cmds:
+      - rm -rf build/
+
+  run:
+    desc: Build and launch the app
+    deps: [build]
+    cmds:
+      - open {{.APP_BUNDLE}}
