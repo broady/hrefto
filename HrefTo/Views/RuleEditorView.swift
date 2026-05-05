@@ -165,6 +165,10 @@ struct ConditionRow: View {
     @Binding var condition: Condition
     let onDelete: () -> Void
 
+    private var isSourceAppField: Bool {
+        [.sourceBundleId, .sourceName, .sourceApp].contains(condition.field)
+    }
+
     var body: some View {
         HStack {
             Picker("", selection: $condition.field) {
@@ -181,8 +185,12 @@ struct ConditionRow: View {
             }
             .frame(width: 120)
 
-            TextField("value", text: $condition.value)
-                .textFieldStyle(.roundedBorder)
+            if isSourceAppField && condition.operator == .equals {
+                AppPickerField(value: $condition.value, fieldType: condition.field)
+            } else {
+                TextField("value", text: $condition.value)
+                    .textFieldStyle(.roundedBorder)
+            }
 
             Button(action: onDelete) {
                 Image(systemName: "minus.circle")

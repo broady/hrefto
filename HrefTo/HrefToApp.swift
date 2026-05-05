@@ -172,13 +172,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
               let url = URL(string: urlString) else { return }
 
+        // Try to get the actual sender from the Apple Event's return address (authoritative).
+        // Falls back to frontmost app heuristic if unavailable.
+        let sourceApp = Self.sourceAppFromEvent(event) ?? Self.captureSourceApp()
+
         Task { @MainActor in
-            urlHandler.handleURL(url)
+            urlHandler.handleURL(url, sourceApp: sourceApp)
 
             if urlHandler.showingPicker, let pendingURL = urlHandler.pendingURL {
                 showPicker(for: pendingURL)
             }
         }
+    }
+
+    /// Extracts the sending app from the Apple Event's return address (PID-based).
+    /// This is authoritative — it's the actual process that sent the URL, not a guess.
+    private static func sourceAppFromEvent(_ event: NSAppleEventDescriptor) -> NSRunningApplication? {
+        // The event's attributeDescriptor for keyAddressAttr contains sender info.
+        // For local events, we can get the sender's PID from the process serial number or audit token.
+        guard let senderDesc = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr)) else {
+            return nil
+        }
+        let pid = senderDesc.int32Value
+        guard pid > 0 else { return nil }
+        let app = NSRunningApplication(processIdentifier: pid)
+        // Don't return ourselves
+        if app?.bundleIdentifier == Bundle.main.bundleIdentifier { return nil }
+        return app
+    }
+
+    /// Returns the frontmost app, excluding HrefTo itself.
+    private static func captureSourceApp() -> NSRunningApplication? {
+        URLHandler.captureSourceApp()
     }
 
     private func showPicker(for url: URL) {
@@ -196,11 +221,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             url: url,
             sourceAppName: sourceAppName,
             browsers: browsers,
-            onSelect: { [weak self] browser, profile in
+            onSelect: { [weak self] browser, profile, quickRule in
                 self?.urlHandler.recordPickerSelection(url: url, context: self?.urlHandler.pendingContext, bundleId: browser.bundleId, profileId: profile?.id)
                 self?.urlHandler.openURL(url, bundleId: browser.bundleId, profile: profile, isChromium: browser.isChromiumBased)
                 self?.pickerController.close()
                 self?.urlHandler.showingPicker = false
+
+                // Create quick rule if any "always" checkbox was checked
+                if quickRule.alwaysForDomain || quickRule.alwaysForApp {
+                    self?.createQuickRule(
+                        url: url,
+                        options: quickRule,
+                        browser: browser,
+                        profile: profile
+                    )
+                }
             },
             onDismiss: { [weak self] in
                 self?.pickerController.close()
@@ -209,12 +244,85 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             onCreateRule: { [weak self] in
                 self?.pickerController.close()
                 self?.urlHandler.showingPicker = false
-                // Open settings to rules tab
-                NSApp.sendAction(Selector(("showSettingsWindow:")), to: nil, from: nil)
+
+                // Build a pre-filled rule from the current URL context
+                var conditions: [Condition] = []
+                if let host = url.host, !host.isEmpty {
+                    conditions.append(Condition(field: .host, operator: .endsWith, value: host))
+                }
+                if let sourceBundleId = self?.urlHandler.pendingContext?.sourceApp?.bundleIdentifier {
+                    conditions.append(Condition(field: .sourceBundleId, operator: .equals, value: sourceBundleId))
+                }
+
+                let prefilled = Rule(
+                    id: UUID().uuidString,
+                    name: "New Rule",
+                    enabled: true,
+                    matchMode: .all,
+                    conditions: conditions.isEmpty
+                        ? [Condition(field: .host, operator: .endsWith, value: "example.com")]
+                        : conditions,
+                    behaviour: Behaviour(type: .showPicker, bundleId: nil, profileId: nil, filter: .all)
+                )
+
+                AppConfig.shared.pendingEditRule = prefilled
+                self?.openSettings()
+                NotificationCenter.default.post(name: .openRulesTab, object: nil)
             }
         )
 
         pickerController.show(with: pickerView)
+    }
+
+    private func createQuickRule(url: URL, options: QuickRuleOptions, browser: Browser, profile: BrowserProfile?) {
+        var conditions: [Condition] = []
+
+        if options.alwaysForDomain {
+            let host = url.host ?? ""
+            let parts = host.split(separator: ".")
+            let domain = parts.count >= 2 ? parts.suffix(2).joined(separator: ".") : host
+            conditions.append(Condition(field: .host, operator: .endsWith, value: domain))
+        }
+
+        if options.alwaysForApp {
+            if let sourceBundleId = urlHandler.pendingContext?.sourceApp?.bundleIdentifier {
+                conditions.append(Condition(field: .sourceBundleId, operator: .equals, value: sourceBundleId))
+            }
+        } else if options.includeSourceApp && options.alwaysForDomain {
+            // "Only from <app>" sub-option under domain rule
+            if let sourceBundleId = urlHandler.pendingContext?.sourceApp?.bundleIdentifier {
+                conditions.append(Condition(field: .sourceBundleId, operator: .equals, value: sourceBundleId))
+            }
+        }
+
+        guard !conditions.isEmpty else { return }
+
+        let browserName = profile != nil ? "\(browser.name) (\(profile!.name))" : browser.name
+        let conditionSummary: String
+        if options.alwaysForDomain && (options.alwaysForApp || options.includeSourceApp) {
+            let domain = url.host ?? ""
+            let sourceName = urlHandler.pendingContext?.sourceApp?.localizedName ?? "app"
+            conditionSummary = "\(domain) from \(sourceName)"
+        } else if options.alwaysForApp {
+            let sourceName = urlHandler.pendingContext?.sourceApp?.localizedName ?? "app"
+            conditionSummary = "from \(sourceName)"
+        } else {
+            conditionSummary = url.host ?? "domain"
+        }
+
+        let rule = Rule(
+            id: UUID().uuidString,
+            name: "\(conditionSummary) \u{2192} \(browserName)",
+            enabled: true,
+            matchMode: .all,
+            conditions: conditions,
+            behaviour: Behaviour(type: .openInBrowser, bundleId: browser.bundleId, profileId: profile?.id, filter: nil)
+        )
+
+        // Insert before the default rule
+        let insertIndex = max(0, AppConfig.shared.data.rules.count - 1)
+        AppConfig.shared.data.rules.insert(rule, at: insertIndex)
+        AppConfig.shared.save()
     }
 
     @objc private func toggleEnabled() {

@@ -60,6 +60,17 @@ struct RulesTab: View {
                 editingRule = nil
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .openRulesTab)) { _ in
+            if let pending = config.pendingEditRule {
+                // Insert before the default rule
+                let insertIndex = max(0, config.data.rules.count - 1)
+                config.data.rules.insert(pending, at: insertIndex)
+                config.save()
+                selectedRuleId = pending.id
+                editingRule = pending
+                config.pendingEditRule = nil
+            }
+        }
     }
 
     private func addRule() {

@@ -23,9 +23,15 @@ struct ConfigData: Codable {
     var settings: AppSettings = AppSettings()
 }
 
+extension Notification.Name {
+    static let openRulesTab = Notification.Name("HrefTo.openRulesTab")
+}
+
 @MainActor
 class AppConfig: ObservableObject {
     @Published var data: ConfigData = ConfigData()
+    /// Set by picker's "Create Rule..." to pre-fill the rule editor.
+    @Published var pendingEditRule: Rule?
 
     static let shared = AppConfig()
 

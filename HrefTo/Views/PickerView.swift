@@ -1,15 +1,40 @@
 import SwiftUI
 
+struct QuickRuleOptions {
+    var alwaysForDomain: Bool = false
+    var alwaysForApp: Bool = false
+    var includeSourceApp: Bool = false  // sub-option of domain rule
+}
+
 struct PickerView: View {
     let url: URL
     let sourceAppName: String?
     let browsers: [Browser]
-    let onSelect: (Browser, BrowserProfile?) -> Void
+    let onSelect: (Browser, BrowserProfile?, QuickRuleOptions) -> Void
     let onDismiss: () -> Void
     let onCreateRule: () -> Void
 
     @State private var alwaysForDomain = false
+    @State private var alwaysForApp = false
     @State private var includeSourceApp = false
+
+    /// Registrable domain (e.g. "google.com" from "docs.google.com")
+    private var domain: String {
+        guard let host = url.host, !host.isEmpty else { return "" }
+        let parts = host.split(separator: ".")
+        if parts.count >= 2 {
+            return parts.suffix(2).joined(separator: ".")
+        }
+        return host
+    }
+
+    private var quickRuleOptions: QuickRuleOptions {
+        QuickRuleOptions(
+            alwaysForDomain: alwaysForDomain,
+            alwaysForApp: alwaysForApp,
+            includeSourceApp: includeSourceApp
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -36,12 +61,12 @@ struct PickerView: View {
             ForEach(Array(browsers.enumerated()), id: \.element.bundleId) { index, browser in
                 if browser.profiles.isEmpty || browser.profiles.filter(\.enabled).count <= 1 {
                     BrowserRow(browser: browser, profile: nil, shortcut: index + 1) {
-                        onSelect(browser, nil)
+                        onSelect(browser, nil, quickRuleOptions)
                     }
                 } else {
                     ForEach(browser.profiles.filter(\.enabled)) { profile in
                         BrowserRow(browser: browser, profile: profile, shortcut: nil) {
-                            onSelect(browser, profile)
+                            onSelect(browser, profile, quickRuleOptions)
                         }
                     }
                 }
@@ -51,13 +76,20 @@ struct PickerView: View {
 
             // Quick rule options
             VStack(alignment: .leading, spacing: 6) {
-                Toggle("Always for this domain", isOn: $alwaysForDomain)
-                    .font(.caption)
-
-                if alwaysForDomain && sourceAppName != nil {
-                    Toggle("Only from \(sourceAppName!)", isOn: $includeSourceApp)
+                if !domain.isEmpty {
+                    Toggle("Always for \(domain)", isOn: $alwaysForDomain)
                         .font(.caption)
-                        .padding(.leading, 16)
+
+                    if alwaysForDomain && sourceAppName != nil && !alwaysForApp {
+                        Toggle("Only from \(sourceAppName!)", isOn: $includeSourceApp)
+                            .font(.caption)
+                            .padding(.leading, 16)
+                    }
+                }
+
+                if let source = sourceAppName {
+                    Toggle("Always from \(source)", isOn: $alwaysForApp)
+                        .font(.caption)
                 }
 
                 Button("Create Rule...") {

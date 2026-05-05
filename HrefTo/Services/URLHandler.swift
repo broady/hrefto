@@ -13,7 +13,7 @@ class URLHandler: ObservableObject {
     @Published var showingPicker = false
     @Published var pickerFilter: PickerFilter = .all
 
-    func handleURL(_ url: URL) {
+    func handleURL(_ url: URL, sourceApp: NSRunningApplication? = nil) {
         let config = AppConfig.shared
 
         // If disabled, pass straight to default browser
@@ -32,12 +32,12 @@ class URLHandler: ObservableObject {
 
         // Build context
         let modifiers = modifierMonitor.currentModifierString()
-        let sourceApp = NSWorkspace.shared.frontmostApplication
+        let resolvedSourceApp = sourceApp ?? Self.captureSourceApp()
         let runningCount = browserDetector.countRunningBrowsers(enabledBrowsers: config.data.browsers)
 
         let context = URLContext(
             url: url,
-            sourceApp: sourceApp,
+            sourceApp: resolvedSourceApp,
             modifiers: modifiers,
             runningBrowserCount: runningCount,
             isHandoff: false
@@ -92,11 +92,10 @@ class URLHandler: ObservableObject {
         let config = NSWorkspace.OpenConfiguration()
 
         if let profile = profile, isChromium {
-            config.arguments = ["--profile-directory=\(profile.id)", url.absoluteString]
-            NSWorkspace.shared.openApplication(at: browserURL, configuration: config)
-        } else {
-            NSWorkspace.shared.open([url], withApplicationAt: browserURL, configuration: config)
+            config.arguments = ["--profile-directory=\(profile.id)"]
         }
+
+        NSWorkspace.shared.open([url], withApplicationAt: browserURL, configuration: config)
     }
 
     private func openInFrontmostBrowser(_ url: URL, context: URLContext?, matchedRule: Rule?) {
@@ -177,6 +176,22 @@ class URLHandler: ObservableObject {
         )
 
         LinkHistory.shared.record(entry: entry)
+    }
+
+    // MARK: - Source App
+
+    /// Returns the frontmost app, excluding HrefTo itself.
+    static func captureSourceApp() -> NSRunningApplication? {
+        let ownBundleId = Bundle.main.bundleIdentifier
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        if frontmost?.bundleIdentifier != ownBundleId {
+            return frontmost
+        }
+        return NSWorkspace.shared.runningApplications.first {
+            $0.isActive == false &&
+            $0.activationPolicy == .regular &&
+            $0.bundleIdentifier != ownBundleId
+        }
     }
 
     // MARK: - Internal Scheme
