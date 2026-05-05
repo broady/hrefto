@@ -41,6 +41,15 @@ tasks:
     cmds:
       - rm -rf build/
 
+  release:
+    desc: Build a release zip for distribution
+    deps: [build]
+    cmds:
+      - cd build && zip -r HrefTo.app.zip HrefTo.app
+      - echo "SHA256:"
+      - shasum -a 256 build/HrefTo.app.zip
+      - echo "Built build/HrefTo.app.zip"
+
   run:
     desc: Build and launch the app
     deps: [build]
