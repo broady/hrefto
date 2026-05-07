@@ -228,7 +228,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 self?.urlHandler.showingPicker = false
 
                 // Create quick rule if any "always" checkbox was checked
-                if quickRule.alwaysForDomain || quickRule.alwaysForApp {
+                if quickRule.alwaysForDomain || quickRule.alwaysForPathPrefix || quickRule.alwaysForApp {
                     self?.createQuickRule(
                         url: url,
                         options: quickRule,
@@ -276,20 +276,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func createQuickRule(url: URL, options: QuickRuleOptions, browser: Browser, profile: BrowserProfile?) {
         var conditions: [Condition] = []
+        var scopeLabel: String = url.host ?? "domain"
 
-        if options.alwaysForDomain {
+        if options.alwaysForPathPrefix, let info = PathPrefixHost.extract(from: url) {
+            // Most specific: e.g. github.com + path beginsWith /org/repo
+            conditions.append(Condition(field: .host, operator: .equals, value: info.host))
+            conditions.append(Condition(field: .path, operator: .beginsWith, value: info.prefix))
+            scopeLabel = "\(info.host)\(info.prefix)"
+        } else if options.alwaysForDomain {
             let host = url.host ?? ""
             let parts = host.split(separator: ".")
             let domain = parts.count >= 2 ? parts.suffix(2).joined(separator: ".") : host
             conditions.append(Condition(field: .host, operator: .endsWith, value: domain))
+            scopeLabel = domain
         }
+
+        let scopedToURL = options.alwaysForDomain || options.alwaysForPathPrefix
 
         if options.alwaysForApp {
             if let sourceBundleId = urlHandler.pendingContext?.sourceApp?.bundleIdentifier {
                 conditions.append(Condition(field: .sourceBundleId, operator: .equals, value: sourceBundleId))
             }
-        } else if options.includeSourceApp && options.alwaysForDomain {
-            // "Only from <app>" sub-option under domain rule
+        } else if options.includeSourceApp && scopedToURL {
+            // "Only from <app>" sub-option under domain/path-prefix rule
             if let sourceBundleId = urlHandler.pendingContext?.sourceApp?.bundleIdentifier {
                 conditions.append(Condition(field: .sourceBundleId, operator: .equals, value: sourceBundleId))
             }
@@ -299,15 +308,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         let browserName = profile != nil ? "\(browser.name) (\(profile!.name))" : browser.name
         let conditionSummary: String
-        if options.alwaysForDomain && (options.alwaysForApp || options.includeSourceApp) {
-            let domain = url.host ?? ""
+        if scopedToURL && (options.alwaysForApp || options.includeSourceApp) {
             let sourceName = urlHandler.pendingContext?.sourceApp?.localizedName ?? "app"
-            conditionSummary = "\(domain) from \(sourceName)"
+            conditionSummary = "\(scopeLabel) from \(sourceName)"
         } else if options.alwaysForApp {
             let sourceName = urlHandler.pendingContext?.sourceApp?.localizedName ?? "app"
             conditionSummary = "from \(sourceName)"
         } else {
-            conditionSummary = url.host ?? "domain"
+            conditionSummary = scopeLabel
         }
 
         let rule = Rule(

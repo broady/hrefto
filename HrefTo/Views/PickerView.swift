@@ -2,8 +2,9 @@ import SwiftUI
 
 struct QuickRuleOptions {
     var alwaysForDomain: Bool = false
+    var alwaysForPathPrefix: Bool = false  // e.g. github.com/org/repo
     var alwaysForApp: Bool = false
-    var includeSourceApp: Bool = false  // sub-option of domain rule
+    var includeSourceApp: Bool = false  // sub-option of domain/path-prefix rule
 }
 
 struct PickerView: View {
@@ -15,6 +16,7 @@ struct PickerView: View {
     let onCreateRule: () -> Void
 
     @State private var alwaysForDomain = false
+    @State private var alwaysForPathPrefix = false
     @State private var alwaysForApp = false
     @State private var includeSourceApp = false
 
@@ -28,9 +30,17 @@ struct PickerView: View {
         return host
     }
 
+    /// Path-prefix label like "github.com/anthropics/claude-code" when
+    /// the URL is on a supported host and has an org/repo style path.
+    private var pathPrefixLabel: String? {
+        guard let info = PathPrefixHost.extract(from: url) else { return nil }
+        return "\(info.host)\(info.prefix)"
+    }
+
     private var quickRuleOptions: QuickRuleOptions {
         QuickRuleOptions(
             alwaysForDomain: alwaysForDomain,
+            alwaysForPathPrefix: alwaysForPathPrefix,
             alwaysForApp: alwaysForApp,
             includeSourceApp: includeSourceApp
         )
@@ -59,12 +69,18 @@ struct PickerView: View {
 
             // Browser list
             ForEach(Array(browsers.enumerated()), id: \.element.bundleId) { index, browser in
-                if browser.profiles.isEmpty || browser.profiles.filter(\.enabled).count <= 1 {
+                let enabledProfiles = browser.profiles.filter(\.enabled)
+                if enabledProfiles.isEmpty {
                     BrowserRow(browser: browser, profile: nil, shortcut: index + 1) {
                         onSelect(browser, nil, quickRuleOptions)
                     }
+                } else if enabledProfiles.count == 1 {
+                    let profile = enabledProfiles[0]
+                    BrowserRow(browser: browser, profile: profile, shortcut: index + 1) {
+                        onSelect(browser, profile, quickRuleOptions)
+                    }
                 } else {
-                    ForEach(browser.profiles.filter(\.enabled)) { profile in
+                    ForEach(enabledProfiles) { profile in
                         BrowserRow(browser: browser, profile: profile, shortcut: nil) {
                             onSelect(browser, profile, quickRuleOptions)
                         }
@@ -76,15 +92,20 @@ struct PickerView: View {
 
             // Quick rule options
             VStack(alignment: .leading, spacing: 6) {
+                if let label = pathPrefixLabel {
+                    Toggle("Always for \(label)", isOn: $alwaysForPathPrefix)
+                        .font(.caption)
+                }
+
                 if !domain.isEmpty {
                     Toggle("Always for \(domain)", isOn: $alwaysForDomain)
                         .font(.caption)
+                }
 
-                    if alwaysForDomain && sourceAppName != nil && !alwaysForApp {
-                        Toggle("Only from \(sourceAppName!)", isOn: $includeSourceApp)
-                            .font(.caption)
-                            .padding(.leading, 16)
-                    }
+                if (alwaysForDomain || alwaysForPathPrefix) && sourceAppName != nil && !alwaysForApp {
+                    Toggle("Only from \(sourceAppName!)", isOn: $includeSourceApp)
+                        .font(.caption)
+                        .padding(.leading, 16)
                 }
 
                 if let source = sourceAppName {

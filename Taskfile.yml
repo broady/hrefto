@@ -36,6 +36,19 @@ tasks:
     cmds:
       - swiftc -typecheck -target arm64-apple-macos14.0 -sdk {{.SDK}} {{.SWIFT_FILES}}
 
+  test:
+    desc: Run unit tests
+    cmds:
+      - mkdir -p build
+      - |
+        swiftc \
+          -target arm64-apple-macos14.0 \
+          -sdk {{.SDK}} \
+          -o build/test-runner \
+          HrefTo/Models/Rule.swift \
+          HrefToTests/main.swift
+      - build/test-runner
+
   clean:
     desc: Remove build artifacts
     cmds:

@@ -20,7 +20,21 @@ struct BrowsersTab: View {
                     Task {
                         let detector = BrowserDetector()
                         let detected = detector.detectBrowsers()
-                        // Merge: keep user preferences for existing browsers, add new ones
+                        let detectedById = Dictionary(uniqueKeysWithValues: detected.map { ($0.bundleId, $0) })
+
+                        // Merge new profiles into already-known browsers, preserving
+                        // the user's enable/disable toggles for existing profiles.
+                        for index in config.data.browsers.indices {
+                            let bundleId = config.data.browsers[index].bundleId
+                            guard let scanned = detectedById[bundleId] else { continue }
+                            let existingProfiles = config.data.browsers[index].profiles
+                            let existingById = Dictionary(uniqueKeysWithValues: existingProfiles.map { ($0.id, $0) })
+                            config.data.browsers[index].profiles = scanned.profiles.map { scannedProfile in
+                                existingById[scannedProfile.id] ?? scannedProfile
+                            }
+                        }
+
+                        // Append browsers we haven't seen before.
                         let existingIds = Set(config.data.browsers.map(\.bundleId))
                         let newBrowsers = detected.filter { !existingIds.contains($0.bundleId) }
                         config.data.browsers.append(contentsOf: newBrowsers)
@@ -84,9 +98,13 @@ struct BrowserListRow: View {
             if isExpanded {
                 ForEach(Array(browser.profiles.enumerated()), id: \.element.id) { profileIndex, profile in
                     HStack {
-                        Text(profile.name)
-                            .font(.caption)
-                            .padding(.leading, 40)
+                        TextField("Profile name", text: Binding(
+                            get: { browser.profiles[profileIndex].name },
+                            set: { browser.profiles[profileIndex].name = $0 }
+                        ))
+                        .font(.caption)
+                        .textFieldStyle(.roundedBorder)
+                        .padding(.leading, 40)
                         Spacer()
                         Toggle("", isOn: Binding(
                             get: { browser.profiles[profileIndex].enabled },

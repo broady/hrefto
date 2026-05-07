@@ -70,6 +70,24 @@ struct Behaviour: Codable, Hashable {
     var filter: PickerFilter?   // for showPicker
 }
 
+/// Hosts where we treat the first two path segments as a "repository"
+/// identifier (e.g. github.com/org/repo), so the picker can offer a
+/// per-repo "always open in X" rule.
+enum PathPrefixHost {
+    static let supported: Set<String> = ["github.com"]
+
+    /// Returns the canonical host and `/seg1/seg2` prefix when the URL
+    /// matches a supported host and has at least two path segments.
+    static func extract(from url: URL) -> (host: String, prefix: String)? {
+        guard let rawHost = url.host?.lowercased() else { return nil }
+        let host = rawHost.hasPrefix("www.") ? String(rawHost.dropFirst(4)) : rawHost
+        guard supported.contains(host) else { return nil }
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 2, !parts[0].isEmpty, !parts[1].isEmpty else { return nil }
+        return (host, "/\(parts[0])/\(parts[1])")
+    }
+}
+
 struct Rule: Codable, Identifiable {
     var id: String
     var name: String
