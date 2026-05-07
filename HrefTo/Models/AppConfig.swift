@@ -9,6 +9,53 @@ struct AppSettings: Codable {
     var enabled: Bool = true
     var servicesDismissed: Bool = false
     var skipPickerForSingleBrowser: Bool = true
+    var forcePickerModifiers: Set<ModifierKey> = []
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        launchAtLogin = (try? c.decode(Bool.self, forKey: .launchAtLogin)) ?? false
+        showInDock = (try? c.decode(Bool.self, forKey: .showInDock)) ?? false
+        pickerPosition = (try? c.decode(PickerPosition.self, forKey: .pickerPosition)) ?? .cursor
+        pickerTimeoutSeconds = (try? c.decode(Int.self, forKey: .pickerTimeoutSeconds)) ?? 0
+        enabled = (try? c.decode(Bool.self, forKey: .enabled)) ?? true
+        servicesDismissed = (try? c.decode(Bool.self, forKey: .servicesDismissed)) ?? false
+        skipPickerForSingleBrowser = (try? c.decode(Bool.self, forKey: .skipPickerForSingleBrowser)) ?? true
+        forcePickerModifiers = (try? c.decode(Set<ModifierKey>.self, forKey: .forcePickerModifiers)) ?? []
+    }
+
+    enum ModifierKey: String, Codable, CaseIterable, Comparable {
+        case shift
+        case control
+        case option
+        case command
+        case function
+
+        var displayName: String {
+            switch self {
+            case .shift: return "Shift ⇧"
+            case .control: return "Control ⌃"
+            case .option: return "Option ⌥"
+            case .command: return "Command ⌘"
+            case .function: return "Fn"
+            }
+        }
+
+        static func < (lhs: ModifierKey, rhs: ModifierKey) -> Bool {
+            lhs.sortOrder < rhs.sortOrder
+        }
+
+        private var sortOrder: Int {
+            switch self {
+            case .control: return 0
+            case .option: return 1
+            case .shift: return 2
+            case .command: return 3
+            case .function: return 4
+            }
+        }
+    }
 
     enum PickerPosition: String, Codable {
         case cursor

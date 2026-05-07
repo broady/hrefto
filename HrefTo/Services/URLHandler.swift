@@ -43,6 +43,12 @@ class URLHandler: ObservableObject {
             isHandoff: false
         )
 
+        // Bypass rules when the configured modifier key is held.
+        if modifierMonitor.isBypassModifierActive(config.data.settings.forcePickerModifiers) {
+            showPicker(url: url, context: context, filter: .all, forceShowPicker: true)
+            return
+        }
+
         // Evaluate rules
         let matchedRule = ruleEngine.evaluate(rules: config.data.rules, context: context)
 
@@ -118,11 +124,11 @@ class URLHandler: ObservableObject {
         }
     }
 
-    func showPicker(url: URL, context: URLContext?, filter: PickerFilter) {
+    func showPicker(url: URL, context: URLContext?, filter: PickerFilter, forceShowPicker: Bool = false) {
         let config = AppConfig.shared
 
         // Skip picker if only one browser is running and setting is on
-        if config.data.settings.skipPickerForSingleBrowser {
+        if config.data.settings.skipPickerForSingleBrowser, !forceShowPicker {
             let runningBundleIds = Set(NSWorkspace.shared.runningApplications.compactMap(\.bundleIdentifier))
             let runningBrowsers = config.data.browsers.filter { $0.enabled && runningBundleIds.contains($0.bundleId) }
 

@@ -89,6 +89,26 @@ struct GeneralTab: View {
                     .onChange(of: config.data.settings.skipPickerForSingleBrowser) { _, _ in
                         config.save()
                     }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Hold keys to force picker:")
+                    HStack {
+                        ForEach(AppSettings.ModifierKey.allCases, id: \.self) { key in
+                            Toggle(key.displayName, isOn: Binding(
+                                get: { config.data.settings.forcePickerModifiers.contains(key) },
+                                set: { enabled in
+                                    if enabled {
+                                        config.data.settings.forcePickerModifiers.insert(key)
+                                    } else {
+                                        config.data.settings.forcePickerModifiers.remove(key)
+                                    }
+                                    config.save()
+                                }
+                            ))
+                            .toggleStyle(.button)
+                        }
+                    }
+                }
             }
 
             Section("History") {
@@ -137,4 +157,3 @@ struct GeneralTab: View {
         }
     }
 }
-

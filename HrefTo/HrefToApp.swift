@@ -19,6 +19,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var pickerController = PickerWindowController()
     private let urlHandler = URLHandler()
     private var settingsWindow: NSWindow?
+    private var globalFlagsMonitor: Any?
+    private var localFlagsMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon if configured
@@ -48,6 +50,38 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Register Services
         NSApp.servicesProvider = self
+
+        // Monitor modifier keys to update menu bar icon when force-picker combo is held
+        setupModifierMonitor()
+    }
+
+    private func setupModifierMonitor() {
+        let handler: (NSEvent) -> Void = { [weak self] event in
+            self?.updateStatusIcon(flags: event.modifierFlags)
+        }
+        globalFlagsMonitor = NSEvent.addGlobalMonitorForEvents(matching: .flagsChanged, handler: handler)
+        localFlagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { event in
+            handler(event)
+            return event
+        }
+    }
+
+    private func updateStatusIcon(flags: NSEvent.ModifierFlags) {
+        let keys = AppConfig.shared.data.settings.forcePickerModifiers
+        guard !keys.isEmpty else { return }
+
+        let active = keys.allSatisfy { key in
+            switch key {
+            case .shift: return flags.contains(.shift)
+            case .control: return flags.contains(.control)
+            case .option: return flags.contains(.option)
+            case .command: return flags.contains(.command)
+            case .function: return flags.contains(.function)
+            }
+        }
+
+        let symbolName = active ? "arrow.up.right.square.fill" : "arrow.up.right.square"
+        statusItem.button?.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "HrefTo")
     }
 
     // MARK: - Services
